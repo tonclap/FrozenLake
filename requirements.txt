@@ -1,0 +1,6 @@
+# PyTorch wheels: choose CPU/GPU variant from https://pytorch.org/get-started/locally/ if needed.
+
+gym>=0.26,<1.0
+numpy>=1.21,<3
+torch>=2.0
+tensorboard>=2.10
