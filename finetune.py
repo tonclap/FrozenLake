@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import copy
 import os
 import sys
 import json
@@ -11,7 +12,7 @@ import logging
 
 from trainer import select_action, get_n_step_info, optimize_model, ReplayMemory
 from dqn_model import AugmentedObservationWrapperCNN, DQNCNN
-from utils import test_on_map
+from utils import set_seed, test_on_map
 
 def fine_tune_on_failed_maps(model, failed_maps, config, device, num_episodes=2000, max_episode_steps=100):
     """
@@ -22,11 +23,14 @@ def fine_tune_on_failed_maps(model, failed_maps, config, device, num_episodes=20
       - средний процент успеха за последние 100 эпизодов (вычисляется каждые 100 эпизодов)
     """
     logging.info("Начинаем дообучение на трудных картах...")
-    
+
+    target_model = copy.deepcopy(model)
+    target_model.eval()
+
     fine_tune_lr = config["LR"] * 0.1
     optimizer = optim.Adam(model.parameters(), lr=fine_tune_lr)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=config["LR_DECAY"])
-    
+
     memory = ReplayMemory(capacity=1000)
     n_actions = 4
 
@@ -76,7 +80,7 @@ def fine_tune_on_failed_maps(model, failed_maps, config, device, num_episodes=20
             n_step_buffer.pop(0)
         
         for _ in range(10):
-            optimize_model(model, model, memory, optimizer, config)
+            optimize_model(model, target_model, memory, optimizer, config)
         scheduler.step()
         
         # Лог каждые 60 секунд – вывод количества пройденных эпизодов за время
@@ -96,18 +100,23 @@ def fine_tune_on_failed_maps(model, failed_maps, config, device, num_episodes=20
     return model
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Дообучение модели DQN на проблемных картах")
+    parser.add_argument("checkpoint", help="Путь к файлу чекпоинта (.pth)")
+    parser.add_argument("failed_maps", help="Путь к JSON с проваленными картами")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Seed для воспроизводимости (по умолчанию из чекпоинта или случайный)")
+    parser.add_argument("--num-episodes", type=int, default=2000,
+                        help="Число эпизодов дообучения (по умолчанию 2000)")
+    args = parser.parse_args()
+
     logging.basicConfig(filename="finetune.log",
                         level=logging.INFO,
                         format="%(asctime)s - %(levelname)s - %(message)s",
                         encoding="utf-8")
-    
-    if len(sys.argv) != 3:
-        print("Использование: python finetune.py <путь_к_чекпойнту> <путь_к_failed_maps.json>")
-        logging.error("Неверное количество аргументов командной строки.")
-        return
 
-    checkpoint_path = sys.argv[1]
-    failed_maps_path = sys.argv[2]
+    checkpoint_path = args.checkpoint
+    failed_maps_path = args.failed_maps
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     map_size = 4
@@ -123,6 +132,12 @@ def main():
     model.eval()
     logging.info(f"Модель загружена из {checkpoint_path}")
     print(f"Модель загружена из {checkpoint_path}")
+
+    effective_seed = args.seed if args.seed is not None else checkpoint.get("seed")
+    if effective_seed is not None:
+        set_seed(effective_seed)
+        logging.info(f"Seed установлен: {effective_seed}")
+        print(f"Seed: {effective_seed}")
     
     if "config" in checkpoint:
         config = checkpoint["config"]
@@ -142,7 +157,9 @@ def main():
     logging.info(f"Загружено {len(failed_maps)} карт, на которых модель ошибалась.")
     print(f"Загружено {len(failed_maps)} карт, на которых модель ошибалась.")
     
-    fine_tuned_model = fine_tune_on_failed_maps(model, failed_maps, config, device, num_episodes=24, max_episode_steps=100)
+    fine_tuned_model = fine_tune_on_failed_maps(model, failed_maps, config, device,
+                                                num_episodes=args.num_episodes,
+                                                max_episode_steps=100)
     
     fine_tuned_checkpoint = {
         "policy_net_state_dict": fine_tuned_model.state_dict(),

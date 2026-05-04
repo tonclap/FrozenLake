@@ -15,7 +15,7 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
 from dqn_model import AugmentedObservationWrapperCNN, DQNCNN
-from utils import generate_all_valid_maps, test_on_map
+from utils import generate_all_valid_maps, test_on_map, set_seed
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -84,7 +84,8 @@ def optimize_model(policy_net, target_net, memory, optimizer, config):
     state_action_values = policy_net(state_batch).gather(1, action_batch)
     next_actions = policy_net(next_state_batch).max(1)[1].unsqueeze(1)
     next_state_values = target_net(next_state_batch).gather(1, next_actions).squeeze().detach()
-    expected_values = (next_state_values * config["GAMMA"] * (1 - done_batch)) + reward_batch
+    gamma_n = config["GAMMA"] ** config["N_STEP"]
+    expected_values = (next_state_values * gamma_n * (1 - done_batch)) + reward_batch
 
     loss = nn.MSELoss()(state_action_values.squeeze(), expected_values)
     optimizer.zero_grad()
@@ -124,7 +125,10 @@ def test_current_model(model, map_size, device):
     success_rate = (successful / total_maps) * 100
     return successful, total_maps, success_rate
 
-def train_model(config, experiment_number, test_writer):
+def train_model(config, experiment_number, test_writer, seed=None):
+    if seed is not None:
+        set_seed(seed)
+        logging.info("Seed set to %d for experiment %d", seed, experiment_number)
     logging.info("Starting training with config: %s", config)
     writer = SummaryWriter(log_dir=f"runs/exp_{experiment_number}_{int(time.time())}")
     n_actions = 4
@@ -160,7 +164,7 @@ def train_model(config, experiment_number, test_writer):
             if episode <= config["CURRICULUM_EPISODES"]:
                 current_p = config["START_P"] - (config["START_P"] - config["END_P"]) * (episode / config["CURRICULUM_EPISODES"])
             else:
-                current_p = random.uniform(0.78, 0.82)
+                current_p = random.uniform(config["POST_CURRICULUM_P_MIN"], config["POST_CURRICULUM_P_MAX"])
 
             env = create_env(config["MAP_SIZE"], current_p)
             obs, _ = env.reset()
@@ -275,7 +279,8 @@ def train_model(config, experiment_number, test_writer):
                     "target_net_state_dict": target_net.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                     "scheduler_state_dict": scheduler.state_dict(),
-                    "config": config
+                    "config": config,
+                    "seed": seed,
                 }
                 checkpoint_path = os.path.join(checkpoint_dir, f"exp_{experiment_number}_checkpoint_ep{episode}.pth")
                 torch.save(checkpoint, checkpoint_path)
@@ -286,7 +291,7 @@ def train_model(config, experiment_number, test_writer):
                 successful, total_maps, success_rate = test_current_model(policy_net, config["MAP_SIZE"], device)
                 logging.info("Test at episode %d: %d/%d maps, success rate: %.2f%%", episode, successful, total_maps, success_rate)
                 writer.add_scalar("Test/success_rate", success_rate, episode)
-                test_writer.writerow([experiment_number, episode, successful, total_maps, success_rate])
+                test_writer.writerow([experiment_number, seed, episode, successful, total_maps, success_rate])
                 
             if avg_success_all > best_overall_success:
                 best_overall_success = avg_success_all
