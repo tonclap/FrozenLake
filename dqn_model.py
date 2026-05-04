@@ -1,3 +1,5 @@
+from collections import deque
+
 import gym
 import numpy as np
 import torch
@@ -26,7 +28,7 @@ class AugmentedObservationWrapperCNN(gym.ObservationWrapper):
     Обёртка для формирования наблюдения в виде трёхканального изображения:
       - Канал 0: One-hot представление позиции агента
       - Канал 1: Кодированная карта (S → 0.0, F → 1.0, H → -1.0, G → 2.0)
-      - Канал 2: Нормированная манхэттенская дистанция до цели
+      - Канал 2: Нормированная BFS-дистанция до цели (по реальным проходимым ячейкам)
     """
     def __init__(self, env):
         super().__init__(env)
@@ -35,12 +37,22 @@ class AugmentedObservationWrapperCNN(gym.ObservationWrapper):
         self.observation_space = gym.spaces.Box(
             low=-np.inf, high=np.inf, shape=(3, self.nrow, self.ncol), dtype=np.float32
         )
-        # Предвычисление манхэттенской карты расстояний
-        self.manhattan_map = np.zeros((self.nrow, self.ncol), dtype=np.float32)
-        for i in range(self.nrow):
-            for j in range(self.ncol):
-                self.manhattan_map[i, j] = abs((self.nrow - 1) - i) + abs((self.ncol - 1) - j)
-        self.manhattan_map /= (self.nrow - 1 + self.ncol - 1)
+        # Предвычисление BFS-расстояния от каждой ячейки до цели (по проходимым клеткам).
+        # Дыры получают значение 1.0 (максимальное), свободные — нормированное число шагов BFS.
+        max_dist = float(self.nrow + self.ncol - 2)
+        self.bfs_map = np.ones((self.nrow, self.ncol), dtype=np.float32)
+        goal_r, goal_c = self.nrow - 1, self.ncol - 1
+        queue = deque([(goal_r, goal_c, 0)])
+        visited_bfs = {(goal_r, goal_c)}
+        while queue:
+            r, c, d = queue.popleft()
+            self.bfs_map[r, c] = d / max_dist
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < self.nrow and 0 <= nc < self.ncol and (nr, nc) not in visited_bfs:
+                    if self.map[nr][nc] in ('S', 'F', 'G'):
+                        visited_bfs.add((nr, nc))
+                        queue.append((nr, nc, d + 1))
 
     def observation(self, obs):
         one_hot = np.zeros((self.nrow, self.ncol), dtype=np.float32)
@@ -48,7 +60,7 @@ class AugmentedObservationWrapperCNN(gym.ObservationWrapper):
         one_hot[pos] = 1.0
         mapping = {'S': 0.0, 'F': 1.0, 'H': -1.0, 'G': 2.0}
         encoded_map = np.array([[mapping.get(cell, 0.0) for cell in row] for row in self.map], dtype=np.float32)
-        observation = np.stack([one_hot, encoded_map, self.manhattan_map], axis=0)
+        observation = np.stack([one_hot, encoded_map, self.bfs_map], axis=0)
         return observation
 
 class DQNCNN(nn.Module):

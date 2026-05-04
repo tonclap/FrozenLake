@@ -10,7 +10,7 @@ default_config = {
     "LR": 0.000513,
     "LR_DECAY": 0.9995,
     "SOFT_TAU": 0.01,
-    "NUM_EPISODES": 30000,
+    "NUM_EPISODES": 40000,
     "REPLAY_CAPACITY": 50000,   # значение будет заменено случайным выбором
     "N_STEP": 3,                # значение будет заменено случайным выбором
     "MAP_SIZE": 4,
@@ -24,6 +24,11 @@ default_config = {
     # Диапазон сложности карты после curriculum (ранее был захардкожен в trainer.py)
     "POST_CURRICULUM_P_MIN": 0.78,
     "POST_CURRICULUM_P_MAX": 0.82,
+    # Вероятность использовать экстремально трудную карту (p=0.50-0.65) в пост-curriculum фазе.
+    # При 0.25 каждый 4-й эпизод воспроизводит плотности дыр проваленных карт.
+    "HARD_INJECTION_PROB": 0.25,
+    "HARD_INJECTION_P_MIN": 0.50,
+    "HARD_INJECTION_P_MAX": 0.65,
     # Гиперпараметры для специального этапа (после curriculum)
     "NEW_LR": 0.00025,
     "NEW_LR_DECAY": 0.9997,
@@ -101,6 +106,10 @@ def validate_config(config: dict) -> None:
         ("STEP_PENALTY",        lambda v: v >= 0,           "должен быть >= 0"),
         ("IMPROVEMENT_FACTOR",  lambda v: v >= 0,           "должен быть >= 0"),
         ("REVISIT_PENALTY",     lambda v: v >= 0,           "должен быть >= 0"),
+        ("HARD_INJECTION_PROB", lambda v: 0 <= v <= 1,     "должен быть в [0, 1]"),
+        ("HARD_INJECTION_P_MIN", lambda v: 0 < v < 1,      "должен быть в (0, 1)"),
+        ("HARD_INJECTION_P_MAX", lambda v: config["HARD_INJECTION_P_MIN"] < v <= 1,
+                                "должен быть > HARD_INJECTION_P_MIN"),
     ]
     errors = []
     for key, check, msg in rules:

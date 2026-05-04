@@ -163,6 +163,12 @@ def train_model(config, experiment_number, test_writer, seed=None):
                 
             if episode <= config["CURRICULUM_EPISODES"]:
                 current_p = config["START_P"] - (config["START_P"] - config["END_P"]) * (episode / config["CURRICULUM_EPISODES"])
+            elif random.random() < config.get("HARD_INJECTION_PROB", 0.0):
+                # Инъекция экстремально трудных карт: плотность дыр 35-50%, аналогично проваленным картам
+                current_p = random.uniform(
+                    config.get("HARD_INJECTION_P_MIN", 0.50),
+                    config.get("HARD_INJECTION_P_MAX", 0.65),
+                )
             else:
                 current_p = random.uniform(config["POST_CURRICULUM_P_MIN"], config["POST_CURRICULUM_P_MAX"])
 
