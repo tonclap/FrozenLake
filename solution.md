@@ -206,8 +206,7 @@ class PrioritizedReplayMemory:
 
 ```bash
 # Шаг 1: Исправить и запустить finetune на текущем лучшем чекпойнте
-python finetune.py models/<best_checkpoint>.pth models/0998_failed_maps.json \
-    --num-episodes 10000
+python finetune.py models/<best_checkpoint>.pth models/0998_failed_maps.json --num-episodes 10000
 
 # Шаг 2: Проверить результат
 python test.py models/<best_checkpoint>_finetuned.pth
