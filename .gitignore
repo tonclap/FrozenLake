@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Stray temp artifacts (e.g. BIT551B.tmp ~2.8GB)
+*.tmp
