@@ -225,7 +225,6 @@ def train_model(config, experiment_number, test_writer, seed=None):
                 total_step_reward = reward + shaping_reward
                 total_reward += total_step_reward
 
-                writer.add_scalar("Reward/step", total_step_reward, steps_done)
                 reward_tensor = torch.tensor([total_step_reward], device=device, dtype=torch.float32)
                 n_step_buffer.append((state, action, reward_tensor, next_state, done_flag))
                 if len(n_step_buffer) >= config["N_STEP"]:
