@@ -1,5 +1,7 @@
-type: ai-pipeline
+﻿type: ai-pipeline
 status: archived
 deploy: none
 owner: dyachkov.gregory
 created: 2026-05-04
+stage: build
+done: true
