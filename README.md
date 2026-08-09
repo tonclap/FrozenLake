@@ -24,13 +24,14 @@ Install a recent **Python** (3.9+ recommended) with:
 | `torch` | DQN networks and training |
 | `tensorboard` | `SummaryWriter` under `runs/` |
 
-Example:
+Install from the pinned set:
 
 ```bash
-pip install gym numpy torch tensorboard
+pip install -r requirements.txt
 ```
 
-There is no `requirements.txt` in this repo; pin versions locally if you need reproducibility.
+`numpy` is pinned below 2.0 on purpose: `gym` 0.26.2 still uses the removed `np.bool8` alias
+and fails on NumPy 2.x.
 
 ## Project layout
 
@@ -43,6 +44,8 @@ There is no `requirements.txt` in this repo; pin versions locally if you need re
 | `experiment.py` | Batch runner: 30 experiments → `results/` CSV + log. |
 | `test.py` | Load a `.pth` checkpoint and report success rate on all valid maps; writes `failed_maps.json`. |
 | `finetune.py` | Optional second-stage training on failed maps from JSON; saves `*_finetuned.pth`. |
+| `fast_eval.py` | Vectorised evaluation of every valid map in one batched rollout (~0.7 s vs ~27 s for the gym path). |
+| `curriculum_trainer.py` | Fine-tuning with a failure-prioritised curriculum over the enumerated map set. |
 
 ## Running training (single experiment)
 
@@ -94,6 +97,48 @@ Loads weights and optional embedded `config` from the checkpoint, runs additiona
 - After `CURRICULUM_EPISODES`, `trainer.py` applies a **“special phase”** that swaps in `NEW_LR`, exploration decay, discount, and planning-step count unless you edit the defaults.
 
 For one-off manual runs without the experiment harness, you can import `default_config` or a dict from `generate_experiment_config()` and invoke `train_model(config, experiment_number, test_writer)` from `trainer.py` (supply a CSV writer compatible with how `trainer` logs tests, or refactor logging for interactive use).
+
+## Solving all maps (100%)
+
+`models/10000_curriculum_ep5200.pth` solves **3828/3828** valid 4×4 maps. Because both the
+policy (greedy argmax) and the environment are deterministic, and the 3828 maps are the
+complete set of valid layouts, this is an exact result rather than a sampled estimate.
+
+Verify it either way:
+
+```bash
+python test.py models/10000_curriculum_ep5200.pth
+```
+
+```bash
+python fast_eval.py models/10000_curriculum_ep5200.pth --verify 500
+```
+
+### Why plain training plateaued
+
+`trainer.py` draws training maps from `generate_random_map(size, p)`, where `p` is the
+probability that a cell is frozen. Evaluation instead sweeps all valid maps uniformly. Maps
+with a high hole density are effectively absent from training at `p ∈ [0.78, 0.82]` while
+carrying almost all of the residual failures — with 9 holes, 10% of maps failed, against 0%
+at 3 holes or fewer. The ceiling came from that train/eval distribution mismatch, not from
+model capacity.
+
+`curriculum_trainer.py` samples from the same enumerated map set the evaluation uses and
+prioritises maps that currently fail:
+
+```bash
+python curriculum_trainer.py --episodes 15000 --eval-every 200 \
+    --init-from checkpoints/exp_2_checkpoint_ep30000.pth \
+    --use-ckpt-config --inherit-optimizer --warmup-episodes 400 \
+    --eps-start 0.05 --lr 5e-5
+```
+
+Two flags matter more than they look. `--use-ckpt-config` inherits `GAMMA`, `N_STEP` and the
+shaping coefficients from the checkpoint: Q-values encode returns under one specific reward
+function, so fine-tuning under a different one discards what was learned — doing that dropped
+99.53% to 78% within 300 episodes. And hard maps are always mixed with uniform samples
+(`HARD_FRACTION`); training on failures alone is what collapsed the earlier `finetune.py` run
+to 73%.
 
 ## License / attribution
 

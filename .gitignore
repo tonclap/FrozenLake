@@ -219,3 +219,6 @@ __marimo__/
 
 # Stray temp artifacts (e.g. BIT551B.tmp ~2.8GB)
 *.tmp
+
+# Промежуточный чекпоинт для возобновления curriculum-прогона (перегенерируется)
+checkpoints/curriculum_resume.pth
