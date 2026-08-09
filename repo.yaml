@@ -3,5 +3,5 @@ status: active
 deploy: none
 owner: dyachkov.gregory
 created: 2026-05-04
-stage: build
+stage: sweep
 done: true
