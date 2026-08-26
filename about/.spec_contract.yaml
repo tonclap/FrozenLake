@@ -1,0 +1,103 @@
+# Контракт SPECS ↔ код — фаза A (экстракция) стандарта
+# _knowledge/spec_fidelity_and_usage_standard.md. Сгенерирован разбором
+# about/SPECS.md агентом 2026-08-17, далее владелец — источник правды для
+# правок; перегенерация только при изменении source_hash.
+
+source_file: about/SPECS.md
+source_hash: 68b5258a679273ccc2ef1093f1ecc88b2d3718987b797a923581001b3e1296ce
+generated: 2026-08-17
+
+claims:
+  - id: C1
+    text: >-
+      Среда — Gym FrozenLake-v1, 4×4, is_slippery=False; карты генерируются
+      со случайной/варьируемой долей льда (p).
+    check: content_match
+    target:
+      - trainer.py
+      - finetune.py
+      - utils.py
+    patterns: ["FrozenLake-v1", "is_slippery=False", "generate_random_map"]
+    mode: union
+
+  - id: C2
+    text: >-
+      Представление состояния — тензор 3×H×W: канал 0 — one-hot позиции
+      агента, канал 1 — кодировка тайлов карты, канал 2 — нормированное
+      манхэттенское расстояние до цели.
+    check: content_match
+    target: dqn_model.py
+    patterns: ["shape=\\(3, self\\.nrow, self\\.ncol\\)", "one_hot", "манхэттен"]
+    note: >-
+      Подозрение на дрейф: dqn_model.py (обёртка, которую использует
+      основной trainer.py) сам описывает канал 2 как «Нормированная
+      BFS-дистанция до цели», не манхэттенское расстояние — слова
+      «манхэттен» в файле нет вовсе. Настоящее манхэттенское расстояние
+      (manhattan_distance) реализовано только в curriculum_trainer.py как
+      альтернативный режим shaping (--shaping manhattan), а не как канал
+      наблюдения. SPECS, вероятно, описывает более раннюю/иную версию
+      представления состояния, чем действующая в dqn_model.py/trainer.py.
+
+  - id: C3
+    text: >-
+      Алгоритм — Double-DQN с replay-буфером, n-step возвратами и
+      «воображаемыми» переходами из детерминированного симулятора.
+    check: content_match
+    target: trainer.py
+    patterns:
+      - "class ReplayMemory"
+      - "def get_n_step_info"
+      - "def simulate_transition"
+      - "next_actions = policy_net\\(next_state_batch\\)"
+    mode: union
+    note: >-
+      Double-DQN подтверждён по факту: action выбирается policy_net,
+      оценка — target_net (классическая double-Q схема), явного слова
+      "double" в коде нет.
+
+  - id: C4
+    text: >-
+      Обучение использует curriculum по сложности карт и reward shaping
+      (приближение к цели, штрафы за повторы и шаги).
+    check: content_match
+    target: config.py
+    patterns: ["CURRICULUM_EPISODES", "STEP_PENALTY", "REVISIT_PENALTY", "IMPROVEMENT_FACTOR"]
+    mode: union
+
+  - id: C5
+    text: >-
+      Оценка выполняется каждые 3000 эпизодов на всех достижимых валидных
+      4×4 раскладках; доля решённых карт — основная метрика.
+    check: content_match
+    target: trainer.py
+    patterns: ["test_interval = 3000", "generate_all_valid_maps"]
+    mode: union
+
+  - id: C6
+    text: >-
+      Есть дообучение: можно резюмировать с чекпойнта и тренироваться на
+      списке «провальных» карт из JSON.
+    check: content_match
+    target: finetune.py
+    patterns: ["failed_maps", "json\\.load", "load_state_dict"]
+    mode: union
+
+  - id: C7
+    text: >-
+      Артефакты пишутся в стандартные каталоги — чекпойнты в
+      checkpoints/ и models/, TensorBoard-логи в runs/, результаты
+      оценки в results/.
+    check: file_exists
+    target: [checkpoints, models, runs, results]
+
+  - id: C8
+    text: >-
+      Вне scope: скользкий режим (is_slippery=True), карты крупнее 4×4,
+      продакшен-инференс — намеренно не поддерживаются.
+    check: manual_review
+    note: >-
+      Утверждение об отсутствии функциональности — доказательство
+      отсутствия слабее доказательства присутствия, дёшево не
+      формализуется грепом (нет отрицательного паттерна, надёжно
+      покрывающего "нигде не используется is_slippery=True" и т.п.);
+      при ревизии SPECS человек подтверждает вручную.
